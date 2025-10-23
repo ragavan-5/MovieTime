@@ -1,0 +1,1 @@
+export default function ConfirmBooking(){ return <div style={{padding:20}}>No pending booking - booking is finalized on confirm step.</div> }
