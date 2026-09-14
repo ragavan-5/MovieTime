@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE
 );
+
 INSERT IGNORE INTO movies (id, title, poster) VALUES
 ('m1', 'Movie A', '/posters/poster1.svg'),
 ('m2', 'Movie B', '/posters/poster2.svg'),
