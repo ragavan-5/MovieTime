@@ -1,5 +1,216 @@
-:root{ --bg:#0f1114; --card:#111214; --accent1:#ff512f; --accent2:#f09819; --muted:#9aa0a6; --glass:rgba(255,255,255,0.03) }
-*{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#070709,#0f1114);color:#fff;font-family:Inter,Segoe UI,Helvetica,Arial}
-.app{min-height:100vh;display:flex;flex-direction:column} .topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:linear-gradient(90deg,var(--accent1),var(--accent2));color:#111;border-bottom:4px solid rgba(255,255,255,0.03)} .topbar h1{margin:0;font-size:20px}
-.topbar nav{display:flex;gap:10px;align-items:center} .topbar a{color:#111;text-decoration:none;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.7);font-weight:600} .linkish{background:none;border:none;color:#111;cursor:pointer;font-weight:700}
-.container{padding:20px;flex:1} .movies-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:20px} .card{background:var(--card);padding:12px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.6);text-align:center} .card img{width:100%;height:220px;object-fit:cover;border-radius:8px} .btn{display:inline-block;padding:8px 12px;border-radius:8px;background:linear-gradient(90deg,var(--accent1),var(--accent2));border:none;color:#111;font-weight:700;cursor:pointer;margin-top:8px} .btn.small{padding:6px 8px;font-size:13px} .muted{color:var(--muted);font-size:14px;margin-left:8px} .movies-grid h3{margin:8px 0 0} .booking-page{display:flex;gap:16px;align-items:flex-start} .booking-left{width:260px} .booking-right{flex:1} .seats{display:flex;flex-direction:column;gap:8px;margin-top:8px} .seat-row{display:flex;gap:8px} .seat{padding:8px 10px;border-radius:6px;border:none;cursor:pointer;background:var(--glass);color:#fff} .seat.taken{opacity:0.35;cursor:not-allowed} .seat.active{outline:3px solid rgba(255,200,120,0.12);transform:translateY(-3px)} .actions{margin-top:12px} .auth-card{max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:10px} .auth-card label{display:flex;flex-direction:column;font-size:14px;color:var(--muted)} .bookings-list{display:flex;flex-direction:column;gap:8px} .booking-item{display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px} .confirm-card{max-width:520px;margin:20px auto;padding:18px} @media (max-width:800px){ .booking-page{flex-direction:column} .booking-left{width:100%} }
+:root {
+  --bg: #0f1114;
+  --card: #111214;
+  --accent1: #ff512f;
+  --accent2: #f09819;
+  --muted: #9aa0a6;
+  --glass: rgba(255, 255, 255, 0.03);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #070709, #0f1114);
+  color: #fff;
+  font-family:
+    Inter,
+    Segoe UI,
+    Helvetica,
+    Arial;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 24px;
+  background: linear-gradient(90deg, var(--accent1), var(--accent2));
+  color: #111;
+  border-bottom: 4px solid rgba(255, 255, 255, 0.03);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.topbar nav {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.topbar a {
+  color: #111;
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  font-weight: 600;
+}
+
+.linkish {
+  background: none;
+  border: none;
+  color: #111;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.container {
+  padding: 20px;
+  flex: 1;
+}
+
+.movies-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.card {
+  background: var(--card);
+  padding: 12px;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+  text-align: center;
+}
+
+.card img {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--accent1), var(--accent2));
+  border: none;
+  color: #111;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.btn.small {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+.movies-grid h3 {
+  margin: 8px 0 0;
+}
+
+.booking-page {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.booking-left {
+  width: 260px;
+}
+
+.booking-right {
+  flex: 1;
+}
+
+.seats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.seat-row {
+  display: flex;
+  gap: 8px;
+}
+
+.seat {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: var(--glass);
+  color: #fff;
+}
+
+.seat.taken {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.seat.active {
+  outline: 3px solid rgba(255, 200, 120, 0.12);
+  transform: translateY(-3px);
+}
+
+.actions {
+  margin-top: 12px;
+}
+
+.auth-card {
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.auth-card label {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.bookings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.booking-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+}
+
+.confirm-card {
+  max-width: 520px;
+  margin: 20px auto;
+  padding: 18px;
+}
+
+@media (max-width: 800px) {
+  .booking-page {
+    flex-direction: column;
+  }
+
+  .booking-left {
+    width: 100%;
+  }
+}
