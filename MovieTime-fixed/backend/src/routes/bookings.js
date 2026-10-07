@@ -69,7 +69,10 @@ const db = require("../db");
 const auth = require("../utils/authMiddleware");
 
 const LOCK_MINUTES = 5;
-
+const {
+    sendBookingConfirmationEmail,
+    sendBookingCancellationEmail
+} = require("../utils/emailService");
 
 /*
 GET USER BOOKINGS
@@ -320,199 +323,362 @@ CONFIRM BOOKING
 */
 router.post("/confirm", auth, async (req, res) => {
 
-  const {
-    showId,
-    seats
-  } = req.body;
-
-  if (
-    !showId ||
-    !Array.isArray(seats) ||
-    seats.length === 0
-  ) {
-    return res.status(400).json({
-      message: "Show and seats are required"
-    });
-  }
-
-  const connection = await db.getConnection();
-
-  try {
-
-    await connection.beginTransaction();
-
-
-    const placeholders = seats
-      .map(() => "?")
-      .join(",");
-
-
-    /*
-    Lock the rows again before confirming
-    */
-    const [rows] = await connection.query(
-      `
-      SELECT
-        id,
-        seat_number,
-        status,
-        locked_by,
-        locked_until
-
-      FROM show_seats
-
-      WHERE show_id = ?
-
-      AND seat_number IN (${placeholders})
-
-      FOR UPDATE
-      `,
-      [
+    const {
         showId,
-        ...seats
-      ]
-    );
+        seats
+    } = req.body;
 
 
-    if (rows.length !== seats.length) {
+    if (
+        !showId ||
+        !Array.isArray(seats) ||
+        seats.length === 0
+    ) {
 
-      await connection.rollback();
+        return res.status(400).json({
+            message: "Show and seats are required"
+        });
 
-      return res.status(400).json({
-        message: "Invalid seat selection"
-      });
     }
 
 
-    /*
-    Make sure all seats are locked by this user
-    */
-    const invalid = rows.filter(
-      seat =>
-        seat.status !== "LOCKED" ||
-        Number(seat.locked_by) !== Number(req.user.id) ||
-        !seat.locked_until ||
-        new Date(seat.locked_until) <= new Date()
-    );
+    const connection =
+        await db.getConnection();
 
 
-    if (invalid.length > 0) {
+    try {
 
-      await connection.rollback();
+        await connection.beginTransaction();
 
-      return res.status(409).json({
-        message: "Seat lock expired. Please select the seats again."
-      });
+
+        const placeholders =
+            seats.map(() => "?").join(",");
+
+
+        /*
+        Lock selected seats
+        */
+
+        const [seatRows] =
+            await connection.query(
+                `
+                SELECT
+                    id,
+                    seat_number,
+                    status,
+                    locked_by,
+                    locked_until
+
+                FROM show_seats
+
+                WHERE show_id = ?
+
+                AND seat_number IN (${placeholders})
+
+                FOR UPDATE
+                `,
+                [
+                    showId,
+                    ...seats
+                ]
+            );
+
+
+        if (
+            seatRows.length !==
+            seats.length
+        ) {
+
+            await connection.rollback();
+
+            return res.status(400).json({
+                message: "Invalid seat selection"
+            });
+
+        }
+
+
+        /*
+        Verify that every seat
+        is still locked by this user
+        */
+
+        const invalid =
+            seatRows.filter(
+                seat =>
+                    seat.status !== "LOCKED" ||
+                    Number(seat.locked_by) !==
+                        Number(req.user.id) ||
+                    !seat.locked_until ||
+                    new Date(seat.locked_until) <=
+                        new Date()
+            );
+
+
+        if (invalid.length > 0) {
+
+            await connection.rollback();
+
+            return res.status(409).json({
+                message:
+                    "Seat lock expired. Please select the seats again."
+            });
+
+        }
+
+
+        /*
+        Get user + show details
+        for the email
+        */
+
+        const [details] =
+            await connection.query(
+                `
+                SELECT
+
+                    u.name,
+                    u.email,
+
+                    m.title AS movie_title,
+
+                    s.show_date,
+                    TIME_FORMAT(
+                        s.show_time,
+                        '%H:%i'
+                    ) AS show_time,
+
+                    sc.name AS screen_name
+
+                FROM users u
+
+                JOIN shows s
+                    ON s.id = ?
+
+                JOIN movies m
+                    ON m.id = s.movie_id
+
+                JOIN screens sc
+                    ON sc.id = s.screen_id
+
+                WHERE u.id = ?
+
+                LIMIT 1
+                `,
+                [
+                    showId,
+                    req.user.id
+                ]
+            );
+
+
+        if (details.length === 0) {
+
+            await connection.rollback();
+
+            return res.status(400).json({
+                message:
+                    "User or show details not found"
+            });
+
+        }
+
+
+        const bookingDetails =
+            details[0];
+
+
+        /*
+        Generate booking ID
+        */
+
+        const bookingId =
+            "b_" +
+            Date.now() +
+            "_" +
+            Math.random()
+                .toString(36)
+                .substring(2, 8);
+
+
+        /*
+        Create booking
+        */
+
+        await connection.query(
+            `
+            INSERT INTO bookings
+            (
+                id,
+                user_id,
+                show_id,
+                total_seats
+            )
+
+            VALUES (?, ?, ?, ?)
+            `,
+            [
+                bookingId,
+                req.user.id,
+                showId,
+                seats.length
+            ]
+        );
+
+
+        /*
+        LOCKED → BOOKED
+        */
+
+        await connection.query(
+            `
+            UPDATE show_seats
+
+            SET
+                status = 'BOOKED',
+                locked_by = NULL,
+                locked_until = NULL
+
+            WHERE show_id = ?
+
+            AND seat_number IN (${placeholders})
+
+            AND status = 'LOCKED'
+
+            AND locked_by = ?
+            `,
+            [
+                showId,
+                ...seats,
+                req.user.id
+            ]
+        );
+
+
+        /*
+        Save individual seats
+        */
+
+        for (const seat of seats) {
+
+            await connection.query(
+                `
+                INSERT INTO booking_seats
+                (
+                    booking_id,
+                    show_id,
+                    seat_number
+                )
+
+                VALUES (?, ?, ?)
+                `,
+                [
+                    bookingId,
+                    showId,
+                    seat
+                ]
+            );
+
+        }
+
+
+        /*
+        IMPORTANT:
+        Commit before sending email.
+        */
+
+        await connection.commit();
+
+
+        /*
+        Send confirmation email AFTER
+        successful database commit.
+        */
+
+        try {
+
+            await sendBookingConfirmationEmail({
+
+                email:
+                    bookingDetails.email,
+
+                name:
+                    bookingDetails.name,
+
+                bookingId,
+
+                movieTitle:
+                    bookingDetails.movie_title,
+
+                date:
+                    bookingDetails.show_date,
+
+                time:
+                    bookingDetails.show_time,
+
+                screen:
+                    bookingDetails.screen_name,
+
+                seats
+
+            });
+
+            console.log(
+                "Booking confirmation email sent to:",
+                bookingDetails.email
+            );
+
+        } catch (emailError) {
+
+            console.error(
+                "Booking succeeded but email failed:",
+                emailError
+            );
+
+        }
+
+
+        res.json({
+
+            success: true,
+
+            bookingId,
+
+            emailSent: true
+
+        });
+
+
+    } catch (error) {
+
+        try {
+            await connection.rollback();
+        } catch {}
+
+
+        console.error(
+            "CONFIRM BOOKING ERROR:",
+            error
+        );
+
+
+        res.status(500).json({
+
+            message:
+                "Booking failed",
+
+            error:
+                error.message
+
+        });
+
+
+    } finally {
+
+        connection.release();
+
     }
 
-
-    const bookingId =
-      "b_" +
-      Date.now() +
-      "_" +
-      Math.random()
-        .toString(36)
-        .substring(2, 8);
-
-
-    /*
-    Create booking
-    */
-    await connection.query(
-      `
-      INSERT INTO bookings
-      (
-        id,
-        user_id,
-        show_id,
-        total_seats
-      )
-
-      VALUES (?, ?, ?, ?)
-      `,
-      [
-        bookingId,
-        req.user.id,
-        showId,
-        seats.length
-      ]
-    );
-
-
-    /*
-    Move LOCKED -> BOOKED
-    */
-    await connection.query(
-      `
-      UPDATE show_seats
-
-      SET status = 'BOOKED',
-          locked_by = NULL,
-          locked_until = NULL
-
-      WHERE show_id = ?
-
-      AND seat_number IN (${placeholders})
-
-      AND status = 'LOCKED'
-
-      AND locked_by = ?
-      `,
-      [
-        showId,
-        ...seats,
-        req.user.id
-      ]
-    );
-
-
-    /*
-    Save each seat against booking
-    */
-    for (const seat of seats) {
-
-      await connection.query(
-        `
-        INSERT INTO booking_seats
-        (
-          booking_id,
-          show_id,
-          seat_number
-        )
-
-        VALUES (?, ?, ?)
-        `,
-        [
-          bookingId,
-          showId,
-          seat
-        ]
-      );
-    }
-
-
-    await connection.commit();
-
-
-    res.json({
-      success: true,
-      bookingId
-    });
-
-  } catch (error) {
-
-    await connection.rollback();
-
-    console.error(error);
-
-    res.status(500).json({
-      message: "Booking failed"
-    });
-
-  } finally {
-
-    connection.release();
-  }
 });
 
 
@@ -521,97 +687,259 @@ CANCEL BOOKING
 */
 router.delete("/:id", auth, async (req, res) => {
 
-  const connection = await db.getConnection();
-
-  try {
-
-    await connection.beginTransaction();
+    const connection =
+        await db.getConnection();
 
 
-    const [bookings] = await connection.query(
-      `
-      SELECT id, show_id
+    try {
 
-      FROM bookings
-
-      WHERE id = ?
-
-      AND user_id = ?
-
-      FOR UPDATE
-      `,
-      [
-        req.params.id,
-        req.user.id
-      ]
-    );
+        await connection.beginTransaction();
 
 
-    if (bookings.length === 0) {
+        /*
+        Get complete booking information
+        BEFORE deleting it.
+        */
 
-      await connection.rollback();
+        const [bookings] =
+            await connection.query(
+                `
+                SELECT
 
-      return res.status(404).json({
-        message: "Booking not found"
-      });
+                    b.id,
+                    b.show_id,
+
+                    u.name,
+                    u.email,
+
+                    m.title AS movie_title,
+
+                    s.show_date,
+
+                    TIME_FORMAT(
+                        s.show_time,
+                        '%H:%i'
+                    ) AS show_time,
+
+                    sc.name AS screen_name
+
+                FROM bookings b
+
+                JOIN users u
+                    ON u.id = b.user_id
+
+                JOIN shows s
+                    ON s.id = b.show_id
+
+                JOIN movies m
+                    ON m.id = s.movie_id
+
+                JOIN screens sc
+                    ON sc.id = s.screen_id
+
+                WHERE b.id = ?
+
+                AND b.user_id = ?
+
+                FOR UPDATE
+                `,
+                [
+                    req.params.id,
+                    req.user.id
+                ]
+            );
+
+
+        if (bookings.length === 0) {
+
+            await connection.rollback();
+
+            return res.status(404).json({
+                message:
+                    "Booking not found"
+            });
+
+        }
+
+
+        const booking =
+            bookings[0];
+
+
+        /*
+        Get booked seats
+        */
+
+        const [seatRows] =
+            await connection.query(
+                `
+                SELECT seat_number
+
+                FROM booking_seats
+
+                WHERE booking_id = ?
+                `,
+                [
+                    booking.id
+                ]
+            );
+
+
+        const seats =
+            seatRows.map(
+                row =>
+                    row.seat_number
+            );
+
+
+        /*
+        Release seats
+        */
+
+        await connection.query(
+            `
+            UPDATE show_seats ss
+
+            JOIN booking_seats bs
+
+                ON bs.show_id =
+                    ss.show_id
+
+                AND bs.seat_number =
+                    ss.seat_number
+
+            SET
+
+                ss.status =
+                    'AVAILABLE',
+
+                ss.locked_by =
+                    NULL,
+
+                ss.locked_until =
+                    NULL
+
+            WHERE bs.booking_id = ?
+            `,
+            [
+                booking.id
+            ]
+        );
+
+
+        /*
+        Delete booking
+        */
+
+        await connection.query(
+            `
+            DELETE FROM bookings
+
+            WHERE id = ?
+            `,
+            [
+                booking.id
+            ]
+        );
+
+
+        /*
+        Commit cancellation
+        */
+
+        await connection.commit();
+
+
+        /*
+        Send cancellation email
+        AFTER successful commit.
+        */
+
+        try {
+
+            await sendBookingCancellationEmail({
+
+                email:
+                    booking.email,
+
+                name:
+                    booking.name,
+
+                bookingId:
+                    booking.id,
+
+                movieTitle:
+                    booking.movie_title,
+
+                date:
+                    booking.show_date,
+
+                time:
+                    booking.show_time,
+
+                screen:
+                    booking.screen_name,
+
+                seats
+
+            });
+
+
+            console.log(
+                "Cancellation email sent to:",
+                booking.email
+            );
+
+
+        } catch (emailError) {
+
+            console.error(
+                "Cancellation succeeded but email failed:",
+                emailError
+            );
+
+        }
+
+
+        res.json({
+
+            success: true,
+
+            emailSent: true
+
+        });
+
+
+    } catch (error) {
+
+        try {
+            await connection.rollback();
+        } catch {}
+
+
+        console.error(
+            "CANCELLATION ERROR:",
+            error
+        );
+
+
+        res.status(500).json({
+
+            message:
+                "Cancellation failed",
+
+            error:
+                error.message
+
+        });
+
+
+    } finally {
+
+        connection.release();
+
     }
 
-
-    const booking = bookings[0];
-
-
-    /*
-    Release seats
-    */
-    await connection.query(
-      `
-      UPDATE show_seats ss
-
-      JOIN booking_seats bs
-        ON bs.show_id = ss.show_id
-        AND bs.seat_number = ss.seat_number
-
-      SET
-        ss.status = 'AVAILABLE',
-        ss.locked_by = NULL,
-        ss.locked_until = NULL
-
-      WHERE bs.booking_id = ?
-      `,
-      [booking.id]
-    );
-
-
-    await connection.query(
-      `
-      DELETE FROM bookings
-      WHERE id = ?
-      `,
-      [booking.id]
-    );
-
-
-    await connection.commit();
-
-
-    res.json({
-      success: true
-    });
-
-  } catch (error) {
-
-    await connection.rollback();
-
-    console.error(error);
-
-    res.status(500).json({
-      message: "Cancellation failed"
-    });
-
-  } finally {
-
-    connection.release();
-  }
 });
 
 
